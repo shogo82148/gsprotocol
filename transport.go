@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/option"
@@ -11,7 +12,7 @@ import (
 
 // Transport serving the Google Cloud Storage objects.
 type Transport struct {
-	Client *storage.Client
+	client storageClient
 }
 
 // NewTransport returns a new Transport.
@@ -21,14 +22,14 @@ func NewTransport(ctx context.Context, opts ...option.ClientOption) (*Transport,
 		return nil, err
 	}
 	return &Transport{
-		Client: client,
+		client: newStorageClientImpl(client),
 	}, nil
 }
 
 // NewTransportWithClient returns a new Transport.
 func NewTransportWithClient(client *storage.Client) *Transport {
 	return &Transport{
-		Client: client,
+		client: newStorageClientImpl(client),
 	}
 }
 
@@ -57,14 +58,14 @@ func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 	if host == "" {
 		host = req.URL.Host
 	}
-	path := req.URL.Path
+	path := strings.TrimPrefix(req.URL.Path, "/")
 
-	object := t.Client.Bucket(host).Object(path)
+	object := t.client.Bucket(host).Object(path)
 	body, err := object.NewReader(req.Context())
 	if err != nil {
 		return nil, err
 	}
-	attrs := body.Attrs
+	attrs := body.Attrs()
 	header := make(http.Header)
 	if v := attrs.ContentType; v != "" {
 		header.Set("Content-Type", v)
@@ -103,7 +104,7 @@ func (t *Transport) headObject(req *http.Request) (*http.Response, error) {
 	if host == "" {
 		host = req.URL.Host
 	}
-	path := req.URL.Path
+	path := strings.TrimPrefix(req.URL.Path, "/")
 
 	_ = path
 	return nil, nil
