@@ -79,6 +79,9 @@ func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 	if v := attrs.ContentType; v != "" {
 		header.Set("Content-Type", v)
 	}
+	if v := attrs.Size; v != 0 {
+		header.Set("Content-Length", strconv.FormatInt(v, 10))
+	}
 	if v := attrs.ContentEncoding; v != "" {
 		header.Set("Content-Encoding", v)
 	}
