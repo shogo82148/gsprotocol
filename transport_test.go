@@ -1,23 +1,40 @@
 package gsprotocol
 
 import (
+	"context"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"testing"
+
+	"cloud.google.com/go/storage"
 )
 
 func TestRoundTrip(t *testing.T) {
-	mock := &storageClientMock{
-		buckets: map[string]*bucketHandleMock{
-			"bucket-name": {
-				objects: map[string]*objectHandleMock{
-					"object-key": {
-						content: "Hello Google Cloud Storage!",
-					},
-				},
-			},
+	// prepare the mock
+	object := &objectHandleMock{
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader("Hello Google Cloud Storage!")), nil
 		},
 	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
 	tr := &http.Transport{}
 	tr.RegisterProtocol("gs", &Transport{client: mock})
 	c := &http.Client{Transport: tr}
@@ -45,18 +62,35 @@ func TestRoundTrip(t *testing.T) {
 }
 
 func TestRoundTrip_withgeneration(t *testing.T) {
-	mock := &storageClientMock{
-		buckets: map[string]*bucketHandleMock{
-			"bucket-name": {
-				objects: map[string]*objectHandleMock{
-					"object-key": {
-						content:    "Hello Google Cloud Storage!",
-						generation: 1234567890,
-					},
-				},
-			},
+	// prepare the mock
+	object := &objectHandleMock{
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader("Hello Google Cloud Storage!")), nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			if gen != 1234567890 {
+				t.Errorf("unexpected generation: want %d, got %d", 1234567890, gen)
+			}
+			return mock
 		},
 	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
 	tr := &http.Transport{}
 	tr.RegisterProtocol("gs", &Transport{client: mock})
 	c := &http.Client{Transport: tr}
