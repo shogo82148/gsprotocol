@@ -21,6 +21,7 @@ type bucketHandle interface {
 
 // the interface for storage.ObjectHandle
 type objectHandle interface {
+	Attrs(ctx context.Context) (attrs *storage.ObjectAttrs, err error)
 	NewReader(ctx context.Context) (storageReader, error)
 	Generation(gen int64) objectHandle
 }

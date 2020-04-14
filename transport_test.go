@@ -16,13 +16,38 @@ func TestRoundTrip(t *testing.T) {
 	// prepare the mock
 	const content = "Hello Google Cloud Storage!"
 	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			if mock.generation != 0 {
+				t.Errorf("want to get latest metadata, but generation %d is specified", mock.generation)
+			}
+			return &storage.ObjectAttrs{
+				ContentType:        "text/plain",
+				ContentLanguage:    "ja-JP",
+				CacheControl:       "public, max-age=60",
+				ContentEncoding:    "identity",
+				ContentDisposition: "inline",
+				Metadata: map[string]string{
+					"foo": "bar",
+				},
+				Size:           int64(len(content)),
+				Metageneration: 5,
+				Generation:     1234567890,
+			}, nil
+		},
 		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			if mock.generation != 1234567890 {
+				t.Errorf("unexpected generation: want %d, got %d", 1234567890, mock.generation)
+			}
 			reader := ioutil.NopCloser(strings.NewReader(content))
-			return storage.ReaderObjectAttrs{
-				ContentType: "text/plain",
-				Generation:  1234567890,
-				Size:        int64(len(content)),
-			}, reader, nil
+			return storage.ReaderObjectAttrs{}, reader, nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			if gen != 1234567890 {
+				t.Errorf("unexpected generation: want %d, got %d", 1234567890, gen)
+			}
+			cp := *mock
+			cp.generation = 1234567890
+			return &cp
 		},
 	}
 	bucket := &bucketHandleMock{
@@ -80,7 +105,26 @@ func TestRoundTrip(t *testing.T) {
 
 func TestRoundTrip_withgeneration(t *testing.T) {
 	// prepare the mock
+	const content = "Hello Google Cloud Storage!"
 	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			if mock.generation != 1234567890 {
+				t.Errorf("unexpected generation: want %d, got %d", 1234567890, mock.generation)
+			}
+			return &storage.ObjectAttrs{
+				ContentType:        "text/plain",
+				ContentLanguage:    "ja-JP",
+				CacheControl:       "public, max-age=60",
+				ContentEncoding:    "identity",
+				ContentDisposition: "inline",
+				Metadata: map[string]string{
+					"foo": "bar",
+				},
+				Size:           int64(len(content)),
+				Metageneration: 5,
+				Generation:     1234567890,
+			}, nil
+		},
 		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
 			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader("Hello Google Cloud Storage!")), nil
 		},
@@ -88,7 +132,9 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 			if gen != 1234567890 {
 				t.Errorf("unexpected generation: want %d, got %d", 1234567890, gen)
 			}
-			return mock
+			cp := *mock
+			cp.generation = 1234567890
+			return &cp
 		},
 	}
 	bucket := &bucketHandleMock{
@@ -129,7 +175,7 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "Hello Google Cloud Storage!" {
-		t.Errorf("want %q, got %q", "Hello Google Cloud Storage", string(got))
+	if string(got) != content {
+		t.Errorf("want %q, got %q", content, string(got))
 	}
 }

@@ -14,6 +14,9 @@ var bucketMockNotFount = &bucketHandleMock{
 }
 
 var objectMockNotFound = &objectHandleMock{
+	attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+		return nil, storage.ErrObjectNotExist
+	},
 	newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
 		return storage.ReaderObjectAttrs{}, nil, storage.ErrObjectNotExist
 	},
@@ -45,8 +48,17 @@ func (h *bucketHandleMock) Object(name string) objectHandle {
 }
 
 type objectHandleMock struct {
+	generation     int64
+	attrFunc       func(ctx context.Context, mock *objectHandleMock) (attrs *storage.ObjectAttrs, err error)
 	newReaderFunc  func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error)
 	generationFunc func(mock *objectHandleMock, gen int64) *objectHandleMock
+}
+
+func (h *objectHandleMock) Attrs(ctx context.Context) (attrs *storage.ObjectAttrs, err error) {
+	if h.attrFunc == nil {
+		panic("unexpected call of Attrs")
+	}
+	return h.attrFunc(ctx, h)
 }
 
 func (h *objectHandleMock) NewReader(ctx context.Context) (storageReader, error) {
