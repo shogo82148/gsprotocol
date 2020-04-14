@@ -2,52 +2,76 @@ package gsprotocol
 
 import (
 	"context"
-	"strings"
+	"io"
 
 	"cloud.google.com/go/storage"
 )
 
+var bucketMockNotFount = &bucketHandleMock{
+	objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+		return objectMockNotFound
+	},
+}
+
+var objectMockNotFound = &objectHandleMock{
+	newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+		return storage.ReaderObjectAttrs{}, nil, storage.ErrObjectNotExist
+	},
+	generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+		return mock
+	},
+}
+
 type storageClientMock struct {
-	buckets map[string]*bucketHandleMock
+	bucketFunc func(mock *storageClientMock, name string) *bucketHandleMock
 }
 
 func (c *storageClientMock) Bucket(name string) bucketHandle {
-	return c.buckets[name]
+	if c.bucketFunc == nil {
+		panic("unexpected call of Bucket")
+	}
+	return c.bucketFunc(c, name)
 }
 
 type bucketHandleMock struct {
-	objects map[string]*objectHandleMock
+	objectFunc func(mock *bucketHandleMock, name string) *objectHandleMock
 }
 
 func (h *bucketHandleMock) Object(name string) objectHandle {
-	return h.objects[name]
+	if h.objectFunc == nil {
+		panic("unexpected call of Object")
+	}
+	return h.objectFunc(h, name)
 }
 
 type objectHandleMock struct {
-	attrs   storage.ReaderObjectAttrs
-	content string
+	newReaderFunc  func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error)
+	generationFunc func(mock *objectHandleMock, gen int64) *objectHandleMock
 }
 
 func (h *objectHandleMock) NewReader(ctx context.Context) (storageReader, error) {
+	attrs, reader, err := h.newReaderFunc(ctx, h)
+	if err != nil {
+		return nil, err
+	}
 	return &storageReaderMock{
-		attrs:  h.attrs,
-		reader: strings.NewReader(h.content),
+		ReadCloser: reader,
+		attrs:      attrs,
 	}, nil
 }
 
+func (h *objectHandleMock) Generation(gen int64) objectHandle {
+	if h.generationFunc == nil {
+		panic("unexpected call of Generation")
+	}
+	return h.generationFunc(h, gen)
+}
+
 type storageReaderMock struct {
-	attrs  storage.ReaderObjectAttrs
-	reader *strings.Reader
+	io.ReadCloser
+	attrs storage.ReaderObjectAttrs
 }
 
 func (r *storageReaderMock) Attrs() storage.ReaderObjectAttrs {
 	return r.attrs
-}
-
-func (r *storageReaderMock) Read(b []byte) (int, error) {
-	return r.reader.Read(b)
-}
-
-func (r *storageReaderMock) Close() error {
-	return nil
 }
