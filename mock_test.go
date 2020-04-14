@@ -2,6 +2,7 @@ package gsprotocol
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"cloud.google.com/go/storage"
@@ -26,6 +27,10 @@ func (h *bucketHandleMock) Object(name string) objectHandle {
 type objectHandleMock struct {
 	attrs   storage.ReaderObjectAttrs
 	content string
+
+	// generation wanted
+	// 0 means that the Generation will not be called.
+	generation int64
 }
 
 func (h *objectHandleMock) NewReader(ctx context.Context) (storageReader, error) {
@@ -33,6 +38,13 @@ func (h *objectHandleMock) NewReader(ctx context.Context) (storageReader, error)
 		attrs:  h.attrs,
 		reader: strings.NewReader(h.content),
 	}, nil
+}
+
+func (h *objectHandleMock) Generation(gen int64) objectHandle {
+	if h.generation == 0 || h.generation != gen {
+		panic(fmt.Sprintf("invalid generation: %d", gen))
+	}
+	return h
 }
 
 type storageReaderMock struct {

@@ -44,6 +44,12 @@ func (h objectHandleImpl) NewReader(ctx context.Context) (storageReader, error) 
 	}, nil
 }
 
+func (h objectHandleImpl) Generation(gen int64) objectHandle {
+	return objectHandleImpl{
+		object: h.object.Generation(gen),
+	}
+}
+
 type storageReaderImpl struct {
 	reader *storage.Reader
 }

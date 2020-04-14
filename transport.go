@@ -2,6 +2,7 @@ package gsprotocol
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,8 +60,16 @@ func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 		host = req.URL.Host
 	}
 	path := strings.TrimPrefix(req.URL.Path, "/")
-
 	object := t.client.Bucket(host).Object(path)
+
+	if fragment := req.URL.Fragment; fragment != "" {
+		gen, err := strconv.ParseInt(fragment, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("gsprotocol: invalid generation %s: %v", fragment, err)
+		}
+		object = object.Generation(gen)
+	}
+
 	body, err := object.NewReader(req.Context())
 	if err != nil {
 		return nil, err
