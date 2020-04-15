@@ -34,6 +34,10 @@ type objectHandleImpl struct {
 	object *storage.ObjectHandle
 }
 
+func (h objectHandleImpl) Attrs(ctx context.Context) (attrs *storage.ObjectAttrs, err error) {
+	return h.object.Attrs(ctx)
+}
+
 func (h objectHandleImpl) NewReader(ctx context.Context) (storageReader, error) {
 	reader, err := h.object.NewReader(ctx)
 	if err != nil {
