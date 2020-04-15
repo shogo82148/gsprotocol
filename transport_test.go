@@ -124,7 +124,7 @@ func TestRoundTrip(t *testing.T) {
 			t.Errorf("unexpected %s: want %v, got %v", tt.key, tt.value, got)
 		}
 	}
-	hash := resp.Header.Values("x-goog-hash")
+	hash := resp.Header["X-Goog-Hash"]
 	if hash[0] != "md5=C0bzBuktiFFeBtSKYtzDGQ==" {
 		t.Errorf("invalid md5: %s", hash[0])
 	}
