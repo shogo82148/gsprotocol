@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -86,11 +87,11 @@ func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 		object = object.Generation(attrs.Generation)
 	}
 
-	header := makeHeader(attrs)
 	body, err := object.NewReader(req.Context())
 	if err != nil {
 		return nil, err
 	}
+	header := makeHeader(attrs, body.Attrs())
 
 	return &http.Response{
 		Status:        "200 OK",
@@ -116,34 +117,39 @@ func (t *Transport) headObject(req *http.Request) (*http.Response, error) {
 	return nil, nil
 }
 
-func makeHeader(attrs *storage.ObjectAttrs) http.Header {
+func makeHeader(attrs *storage.ObjectAttrs, reader storage.ReaderObjectAttrs) http.Header {
 	// common http headers
 	header := make(http.Header)
-	if v := attrs.ContentType; v != "" {
+	if v := reader.ContentType; v != "" {
 		header.Set("Content-Type", v)
 	}
 	if v := attrs.ContentLanguage; v != "" {
 		header.Set("Content-Language", v)
 	}
-	if v := attrs.CacheControl; v != "" {
+	if v := reader.CacheControl; v != "" {
 		header.Set("Cache-Control", v)
 	}
-	if v := attrs.Size; v != 0 {
+	if v := reader.Size; v != 0 {
 		header.Set("Content-Length", strconv.FormatInt(v, 10))
 	}
-	if v := attrs.ContentEncoding; v != "" {
+	if v := reader.ContentEncoding; v != "" {
 		header.Set("Content-Encoding", v)
 	}
 	if v := attrs.ContentDisposition; v != "" {
 		header.Set("Content-Disposition", v)
 	}
-	if v := attrs.Etag; v != "" {
-		header.Set("ETag", v)
+	if v := reader.LastModified; !v.IsZero() {
+		header.Set("Last-Modified", v.Format(http.TimeFormat))
 	}
 
 	// hash
 	if v := attrs.MD5; len(v) > 0 {
-		header.Add("x-goog-hash", "md5ss="+base64.StdEncoding.EncodeToString(v))
+		header.Add("x-goog-hash", "md5="+base64.StdEncoding.EncodeToString(v))
+
+		// attrs has Etag attribute, but it is invalid form e.g. `CPi68c7s4ugCEAM=`
+		// ETag should be quoted like `"<etag_value>"`.
+		// So we generate ETag from MD5.
+		header.Set("ETag", `"`+hex.EncodeToString(v)+`"`)
 	}
 	var crc32 [4]byte
 	binary.BigEndian.PutUint32(crc32[:], attrs.CRC32C)
@@ -158,6 +164,15 @@ func makeHeader(attrs *storage.ObjectAttrs) http.Header {
 	}
 	for key, value := range attrs.Metadata {
 		header.Set("x-goog-meta-"+key, value)
+	}
+	if v := attrs.Size; v != 0 {
+		header.Set("x-goog-stored-content-length", strconv.FormatInt(v, 10))
+	}
+	if v := attrs.ContentEncoding; v != "" {
+		header.Set("x-goog-stored-content-encoding", v)
+	}
+	if v := attrs.StorageClass; v != "" {
+		header.Set("x-goog-storage-class", v)
 	}
 	return header
 }
