@@ -61,40 +61,16 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-
-	host := req.Host
-	if host == "" {
-		host = req.URL.Host
+	object, attrs, err := t.objectAttrs(ctx, req)
+	if err != nil {
+		return nil, err
 	}
-	path := strings.TrimPrefix(req.URL.Path, "/")
-	object := t.client.Bucket(host).Object(path)
-
-	var attrs *storage.ObjectAttrs
-	if fragment := req.URL.Fragment; fragment != "" {
-		gen, err := strconv.ParseInt(fragment, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("gsprotocol: invalid generation %s: %v", fragment, err)
-		}
-		object = object.Generation(gen)
-		attrs, err = object.Attrs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
-		}
-	} else {
-		var err error
-		attrs, err = object.Attrs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
-		}
-		object = object.Generation(attrs.Generation)
-	}
-
 	header := makeHeader(attrs)
 	if resp := checkPreconditions(req, header, attrs); resp != nil {
 		return resp, nil
 	}
 
-	body, err := object.NewReader(req.Context())
+	body, err := object.NewReader(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -114,34 +90,10 @@ func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 
 func (t *Transport) headObject(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-
-	host := req.Host
-	if host == "" {
-		host = req.URL.Host
+	_, attrs, err := t.objectAttrs(ctx, req)
+	if err != nil {
+		return nil, err
 	}
-	path := strings.TrimPrefix(req.URL.Path, "/")
-	object := t.client.Bucket(host).Object(path)
-
-	var attrs *storage.ObjectAttrs
-	if fragment := req.URL.Fragment; fragment != "" {
-		gen, err := strconv.ParseInt(fragment, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("gsprotocol: invalid generation %s: %v", fragment, err)
-		}
-		object = object.Generation(gen)
-		attrs, err = object.Attrs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
-		}
-	} else {
-		var err error
-		attrs, err = object.Attrs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
-		}
-		object = object.Generation(attrs.Generation)
-	}
-
 	header := makeHeader(attrs)
 	if resp := checkPreconditions(req, header, attrs); resp != nil {
 		return resp, nil
@@ -157,6 +109,36 @@ func (t *Transport) headObject(req *http.Request) (*http.Response, error) {
 		Body:       http.NoBody,
 		Close:      true,
 	}, nil
+}
+
+func (t *Transport) objectAttrs(ctx context.Context, req *http.Request) (objectHandle, *storage.ObjectAttrs, error) {
+	host := req.Host
+	if host == "" {
+		host = req.URL.Host
+	}
+	path := strings.TrimPrefix(req.URL.Path, "/")
+	object := t.client.Bucket(host).Object(path)
+
+	var attrs *storage.ObjectAttrs
+	if fragment := req.URL.Fragment; fragment != "" {
+		gen, err := strconv.ParseInt(fragment, 10, 64)
+		if err != nil {
+			return nil, nil, fmt.Errorf("gsprotocol: invalid generation %s: %v", fragment, err)
+		}
+		object = object.Generation(gen)
+		attrs, err = object.Attrs(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
+		}
+	} else {
+		var err error
+		attrs, err = object.Attrs(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
+		}
+		object = object.Generation(attrs.Generation)
+	}
+	return object, attrs, nil
 }
 
 // scanETag determines if a syntactically valid ETag is present at s. If so,
