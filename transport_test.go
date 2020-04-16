@@ -217,6 +217,80 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 	}
 }
 
+func TestRoundTrip_HEAD(t *testing.T) {
+	// prepare the mock
+	const content = "Hello Google Cloud Storage!"
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			if mock.generation != 1234567890 {
+				t.Errorf("unexpected generation: want %d, got %d", 1234567890, mock.generation)
+			}
+			return &storage.ObjectAttrs{
+				ContentType:        "text/plain",
+				ContentLanguage:    "ja-JP",
+				CacheControl:       "public, max-age=60",
+				ContentEncoding:    "identity",
+				ContentDisposition: "inline",
+				Metadata: map[string]string{
+					"foo": "bar",
+				},
+				Size:           int64(len(content)),
+				Metageneration: 5,
+				Generation:     1234567890,
+			}, nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			if gen != 1234567890 {
+				t.Errorf("unexpected generation: want %d, got %d", 1234567890, gen)
+			}
+			cp := *mock
+			cp.generation = 1234567890
+			return &cp
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	req, err := http.NewRequest(http.MethodHead, "gs://bucket-name/object-key#1234567890", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+	got, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "" {
+		t.Errorf("want %q, got %q", "", string(got))
+	}
+}
+
 func TestRoundTrip_IfMatch(t *testing.T) {
 	const content = "Hello Google Cloud Storage!"
 	object := &objectHandleMock{
