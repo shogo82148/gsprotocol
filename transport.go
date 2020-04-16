@@ -287,34 +287,6 @@ func checkIfModifiedSince(req *http.Request, header http.Header, attrs *storage.
 	return condTrue
 }
 
-func checkIfRange(req *http.Request, header http.Header, attrs *storage.ObjectAttrs) condResult {
-	ir := req.Header.Get("If-Range")
-	if ir == "" {
-		return condNone
-	}
-	etag, _ := scanETag(ir)
-	if etag != "" {
-		if etagStrongMatch(etag, header.Get("ETag")) {
-			return condTrue
-		}
-		return condFalse
-	}
-
-	// The If-Range value is typically the ETag value, but it may also be
-	// the modtime date.
-	if attrs.Updated.IsZero() {
-		return condFalse
-	}
-	t, err := http.ParseTime(ir)
-	if err != nil {
-		return condFalse
-	}
-	if t.Unix() == attrs.Updated.Unix() {
-		return condTrue
-	}
-	return condFalse
-}
-
 // checkPreconditions handles conditional requests, and return nil if the condition is satisfied.
 // if it's not, return non nil response.
 func checkPreconditions(req *http.Request, header http.Header, attrs *storage.ObjectAttrs) *http.Response {
