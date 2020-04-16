@@ -27,6 +27,7 @@ func TestRoundTrip(t *testing.T) {
 				CacheControl:       "public, max-age=60",
 				ContentEncoding:    "identity",
 				ContentDisposition: "inline",
+				Updated:            time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
 				Metadata: map[string]string{
 					"foo": "bar",
 				},
@@ -48,7 +49,6 @@ func TestRoundTrip(t *testing.T) {
 				CacheControl:    "public, max-age=60",
 				ContentEncoding: "identity",
 				Size:            int64(len(content)),
-				LastModified:    time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
 			}, reader, nil
 		},
 		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
@@ -163,7 +163,7 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 			}, nil
 		},
 		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
-			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader("Hello Google Cloud Storage!")), nil
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
 		},
 		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
 			if gen != 1234567890 {
@@ -215,4 +215,377 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 	if string(got) != content {
 		t.Errorf("want %q, got %q", content, string(got))
 	}
+}
+
+func TestRoundTrip_IfMatch(t *testing.T) {
+	const content = "Hello Google Cloud Storage!"
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			return &storage.ObjectAttrs{
+				ContentType: "text/plain",
+				MD5:         []byte{0x0b, 0x46, 0xf3, 0x06, 0xe9, 0x2d, 0x88, 0x51, 0x5e, 0x06, 0xd4, 0x8a, 0x62, 0xdc, 0xc3, 0x19},
+				CRC32C:      0x7f762fe2,
+			}, nil
+		},
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			return mock
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	t.Run("precondition failed", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Match", `"etag-value"`)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPreconditionFailed {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusPreconditionFailed, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+
+	t.Run("matched", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Match", `"etag-value", "0b46f306e92d88515e06d48a62dcc319"`)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Errorf("want %q, got %q", content, string(got))
+		}
+	})
+}
+
+func TestRoundTrip_IfNoneMatch(t *testing.T) {
+	const content = "Hello Google Cloud Storage!"
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			return &storage.ObjectAttrs{
+				ContentType: "text/plain",
+				MD5:         []byte{0x0b, 0x46, 0xf3, 0x06, 0xe9, 0x2d, 0x88, 0x51, 0x5e, 0x06, 0xd4, 0x8a, 0x62, 0xdc, 0xc3, 0x19},
+				CRC32C:      0x7f762fe2,
+			}, nil
+		},
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			return mock
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	t.Run("not matched", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-None-Match", `"etag-value"`)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Errorf("want %q, got %q", content, string(got))
+		}
+	})
+
+	t.Run("not modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-None-Match", `"etag-value", "0b46f306e92d88515e06d48a62dcc319"`)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotModified {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusNotModified, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+}
+
+func TestRoundTrip_IfModifiedSince(t *testing.T) {
+	const content = "Hello Google Cloud Storage!"
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			return &storage.ObjectAttrs{
+				ContentType: "text/plain",
+				Updated:     time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
+				MD5:         []byte{0x0b, 0x46, 0xf3, 0x06, 0xe9, 0x2d, 0x88, 0x51, 0x5e, 0x06, 0xd4, 0x8a, 0x62, 0xdc, 0xc3, 0x19},
+				CRC32C:      0x7f762fe2,
+			}, nil
+		},
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			return mock
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	t.Run("not modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Modified-Since", "Wed, 15 Apr 2020 00:56:00 GMT")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotModified {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusNotModified, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+
+	t.Run("modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Modified-Since", "Wed, 15 Apr 2020 00:55:59 GMT")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Errorf("want %q, got %q", content, string(got))
+		}
+	})
+
+	t.Run("with If-None-Match", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-None-Match", `"etag-value", "0b46f306e92d88515e06d48a62dcc319"`)
+		req.Header.Set("If-Modified-Since", "Wed, 15 Apr 2020 00:55:59 GMT") // will be ignored
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotModified {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+}
+
+func TestRoundTrip_IfUnmodifiedSince(t *testing.T) {
+	const content = "Hello Google Cloud Storage!"
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			return &storage.ObjectAttrs{
+				ContentType: "text/plain",
+				Updated:     time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
+			}, nil
+		},
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			return mock
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	t.Run("modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Unmodified-Since", "Wed, 15 Apr 2020 00:55:59 GMT")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPreconditionFailed {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusPreconditionFailed, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+
+	t.Run("not modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Unmodified-Since", "Wed, 15 Apr 2020 00:56:00 GMT")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Errorf("want %q, got %q", content, string(got))
+		}
+	})
 }
