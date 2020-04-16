@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/textproto"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -151,6 +153,18 @@ func handleError(err error) (*http.Response, error) {
 			ProtoMinor: 0,
 			Header:     make(http.Header),
 			Body:       http.NoBody,
+			Close:      true,
+		}, nil
+	}
+	if err, ok := err.(*googleapi.Error); ok {
+		return &http.Response{
+			Status:     fmt.Sprintf("%d %s", err.Code, http.StatusText(err.Code)),
+			StatusCode: err.Code,
+			Proto:      "HTTP/1.0",
+			ProtoMajor: 1,
+			ProtoMinor: 0,
+			Header:     err.Header,
+			Body:       ioutil.NopCloser(strings.NewReader(err.Body)),
 			Close:      true,
 		}, nil
 	}
