@@ -63,7 +63,7 @@ func (t *Transport) getObject(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	object, attrs, err := t.objectAttrs(ctx, req)
 	if err != nil {
-		return nil, err
+		return handleError(err)
 	}
 	header := makeHeader(attrs)
 	if resp := checkPreconditions(req, header, attrs); resp != nil {
@@ -92,7 +92,7 @@ func (t *Transport) headObject(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
 	_, attrs, err := t.objectAttrs(ctx, req)
 	if err != nil {
-		return nil, err
+		return handleError(err)
 	}
 	header := makeHeader(attrs)
 	if resp := checkPreconditions(req, header, attrs); resp != nil {
@@ -128,17 +128,33 @@ func (t *Transport) objectAttrs(ctx context.Context, req *http.Request) (objectH
 		object = object.Generation(gen)
 		attrs, err = object.Attrs(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
+			return nil, nil, err
 		}
 	} else {
 		var err error
 		attrs, err = object.Attrs(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("gsprotocol: failed to get attribute: %v", err)
+			return nil, nil, err
 		}
 		object = object.Generation(attrs.Generation)
 	}
 	return object, attrs, nil
+}
+
+func handleError(err error) (*http.Response, error) {
+	if err == storage.ErrObjectNotExist || err == storage.ErrBucketNotExist {
+		return &http.Response{
+			Status:     "404 Not Found",
+			StatusCode: http.StatusNotFound,
+			Proto:      "HTTP/1.0",
+			ProtoMajor: 1,
+			ProtoMinor: 0,
+			Header:     make(http.Header),
+			Body:       http.NoBody,
+			Close:      true,
+		}, nil
+	}
+	return nil, err
 }
 
 // scanETag determines if a syntactically valid ETag is present at s. If so,

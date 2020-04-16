@@ -663,3 +663,45 @@ func TestRoundTrip_IfUnmodifiedSince(t *testing.T) {
 		}
 	})
 }
+
+func TestRoundTrip_NotFound(t *testing.T) {
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			return nil, storage.ErrObjectNotExist
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unexpected status: want %d, got %d", http.StatusNotFound, resp.StatusCode)
+	}
+}
