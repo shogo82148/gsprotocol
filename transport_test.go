@@ -268,7 +268,7 @@ func TestRoundTrip_IfMatch(t *testing.T) {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusPreconditionFailed {
-			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+			t.Errorf("unexpected status: want %d, got %d", http.StatusPreconditionFailed, resp.StatusCode)
 		}
 		got, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
@@ -379,7 +379,7 @@ func TestRoundTrip_IfNoneMatch(t *testing.T) {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusNotModified {
-			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+			t.Errorf("unexpected status: want %d, got %d", http.StatusNotModified, resp.StatusCode)
 		}
 		got, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
