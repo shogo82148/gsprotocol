@@ -27,6 +27,7 @@ func TestRoundTrip(t *testing.T) {
 				CacheControl:       "public, max-age=60",
 				ContentEncoding:    "identity",
 				ContentDisposition: "inline",
+				Updated:            time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
 				Metadata: map[string]string{
 					"foo": "bar",
 				},
@@ -48,7 +49,6 @@ func TestRoundTrip(t *testing.T) {
 				CacheControl:    "public, max-age=60",
 				ContentEncoding: "identity",
 				Size:            int64(len(content)),
-				LastModified:    time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
 			}, reader, nil
 		},
 		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
