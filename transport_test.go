@@ -503,3 +503,89 @@ func TestRoundTrip_IfModifiedSince(t *testing.T) {
 		}
 	})
 }
+
+func TestRoundTrip_IfUnmodifiedSince(t *testing.T) {
+	const content = "Hello Google Cloud Storage!"
+	object := &objectHandleMock{
+		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
+			return &storage.ObjectAttrs{
+				ContentType: "text/plain",
+				Updated:     time.Date(2020, time.April, 15, 0, 56, 0, 0, time.UTC),
+			}, nil
+		},
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
+		},
+		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
+			return mock
+		},
+	}
+	bucket := &bucketHandleMock{
+		objectFunc: func(mock *bucketHandleMock, name string) *objectHandleMock {
+			if name == "object-key" {
+				return object
+			}
+			return objectMockNotFound
+		},
+	}
+	mock := &storageClientMock{
+		bucketFunc: func(mock *storageClientMock, name string) *bucketHandleMock {
+			if name == "bucket-name" {
+				return bucket
+			}
+			return bucketMockNotFount
+		},
+	}
+
+	tr := &http.Transport{}
+	tr.RegisterProtocol("gs", &Transport{client: mock})
+	c := &http.Client{Transport: tr}
+
+	t.Run("modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Unmodified-Since", "Wed, 15 Apr 2020 00:55:59 GMT")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusPreconditionFailed {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusPreconditionFailed, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+
+	t.Run("not modified", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Unmodified-Since", "Wed, 15 Apr 2020 00:56:00 GMT")
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Errorf("want %q, got %q", content, string(got))
+		}
+	})
+}
