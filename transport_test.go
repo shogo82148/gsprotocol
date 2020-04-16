@@ -163,7 +163,7 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 			}, nil
 		},
 		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
-			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader("Hello Google Cloud Storage!")), nil
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
 		},
 		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
 			if gen != 1234567890 {
@@ -218,23 +218,17 @@ func TestRoundTrip_withgeneration(t *testing.T) {
 }
 
 func TestRoundTrip_IfMatch(t *testing.T) {
-	// prepare the mock
 	const content = "Hello Google Cloud Storage!"
 	object := &objectHandleMock{
 		attrFunc: func(ctx context.Context, mock *objectHandleMock) (*storage.ObjectAttrs, error) {
 			return &storage.ObjectAttrs{
-				ContentType:        "text/plain",
-				ContentLanguage:    "ja-JP",
-				CacheControl:       "public, max-age=60",
-				ContentEncoding:    "identity",
-				ContentDisposition: "inline",
-				Metadata: map[string]string{
-					"foo": "bar",
-				},
-				Size:           int64(len(content)),
-				Metageneration: 5,
-				Generation:     1234567890,
+				ContentType: "text/plain",
+				MD5:         []byte{0x0b, 0x46, 0xf3, 0x06, 0xe9, 0x2d, 0x88, 0x51, 0x5e, 0x06, 0xd4, 0x8a, 0x62, 0xdc, 0xc3, 0x19},
+				CRC32C:      0x7f762fe2,
 			}, nil
+		},
+		newReaderFunc: func(ctx context.Context, mock *objectHandleMock) (storage.ReaderObjectAttrs, io.ReadCloser, error) {
+			return storage.ReaderObjectAttrs{}, ioutil.NopCloser(strings.NewReader(content)), nil
 		},
 		generationFunc: func(mock *objectHandleMock, gen int64) *objectHandleMock {
 			return mock
@@ -261,25 +255,51 @@ func TestRoundTrip_IfMatch(t *testing.T) {
 	tr.RegisterProtocol("gs", &Transport{client: mock})
 	c := &http.Client{Transport: tr}
 
-	req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("If-Match", `"etag-value", "0b46f306e92d88515e06d48a62dcc319"`)
-	resp, err := c.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
+	t.Run("precondition failed", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Match", `"etag-value"`)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusPreconditionFailed {
-		t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
-	}
-	got, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "" {
-		t.Errorf("want %q, got %q", "", string(got))
-	}
+		if resp.StatusCode != http.StatusPreconditionFailed {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != "" {
+			t.Errorf("want %q, got %q", "", string(got))
+		}
+	})
+
+	t.Run("matched", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "gs://bucket-name/object-key", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("If-Match", `"etag-value", "0b46f306e92d88515e06d48a62dcc319"`)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("unexpected status: want %d, got %d", http.StatusOK, resp.StatusCode)
+		}
+		got, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != content {
+			t.Errorf("want %q, got %q", content, string(got))
+		}
+	})
 }
