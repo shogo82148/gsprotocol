@@ -1,7 +1,7 @@
 /*
 Package gsprotocol provides the http.RoundTripper interface for Google Cloud Storage.
 
-The typical use case is to register the "gs" protocol with a http.ransport, as in:
+The typical use case is to register the "gs" protocol with a http.Transport, as in:
 
 	tr := &http.Transport{}
 	gs, err := gsprotocol.NewTransport(context.Background(), option.WithoutAuthentication())
