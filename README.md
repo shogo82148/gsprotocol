@@ -1,3 +1,6 @@
+![Test](https://github.com/shogo82148/gsprotocol/workflows/Test/badge.svg)
+[![PkgGoDev](https://pkg.go.dev/badge/github.com/shogo82148/gsprotocol)](https://pkg.go.dev/github.com/shogo82148/gsprotocol)
+
 # gsprotocol
 
 Package gsprotocol provides the [http.RoundTripper](https://golang.org/pkg/net/http/#RoundTripper) interface for [Google Cloud Storage](https://cloud.google.com/storage/docs).
