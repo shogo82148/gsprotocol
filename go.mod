@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	cloud.google.com/go/storage v1.21.0
-	google.golang.org/api v0.72.0
+	google.golang.org/api v0.73.0
 )
 
 require (
