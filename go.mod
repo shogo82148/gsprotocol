@@ -3,7 +3,7 @@ module github.com/shogo82148/gsprotocol
 go 1.17
 
 require (
-	cloud.google.com/go/storage v1.29.0
+	cloud.google.com/go/storage v1.30.0
 	google.golang.org/api v0.112.0
 )
 
