@@ -44,7 +44,7 @@ func TestRoundTrip(t *testing.T) {
 			if mock.generation != 1234567890 {
 				t.Errorf("unexpected generation: want %d, got %d", 1234567890, mock.generation)
 			}
-			reader := ioutil.NopCloser(strings.NewReader(content))
+			reader := io.NopCloser(strings.NewReader(content))
 			return storage.ReaderObjectAttrs{
 				ContentType:     "text/plain",
 				CacheControl:    "public, max-age=60",
