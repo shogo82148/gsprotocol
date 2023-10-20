@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/textproto"
 	"strconv"
@@ -164,7 +164,7 @@ func handleError(err error) (*http.Response, error) {
 			ProtoMajor: 1,
 			ProtoMinor: 0,
 			Header:     err.Header,
-			Body:       ioutil.NopCloser(strings.NewReader(err.Body)),
+			Body:       io.NopCloser(strings.NewReader(err.Body)),
 			Close:      true,
 		}, nil
 	}
